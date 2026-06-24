@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Commerce Store</title>
+    <link rel="stylesheet" href="Style.css">
+</head>
+<body>
+
+<header>
+    <h1>My E-Commerce Store</h1>
+    <div class="header-buttons">
+        <div class="search-container">
+            <input type="text" id="searchInput" placeholder="Search products..." onkeyup="searchProducts()">
+            <button class="search-btn" onclick="searchProducts()">🔍</button>
+        </div>
+        <button class="auth-btn" id="loginBtn" onclick="showLoginModal()">Login</button>
+        <button class="auth-btn" id="registerBtn" onclick="showRegisterModal()">Register</button>
+        <button class="auth-btn hidden" id="logoutBtn" onclick="logout()">Logout</button>
+        <button class="cart-btn" onclick="toggleCart()">
+            Cart (<span id="cartCount">0</span>)
+        </button>
+    </div>
+</header>
+
+<div class="container">
+    <div class="products" id="products"></div>
+</div>
+
+<!-- Login Modal -->
+<div class="modal" id="loginModal">
+    <div class="modal-content">
+        <span class="close" onclick="closeLoginModal()">&times;</span>
+        <h2>Login</h2>
+        <form onsubmit="handleLogin(event)">
+            <input type="email" id="loginEmail" placeholder="Email" required>
+            <input type="password" id="loginPassword" placeholder="Password" required>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+</div>
+
+<!-- Register Modal -->
+<div class="modal" id="registerModal">
+    <div class="modal-content">
+        <span class="close" onclick="closeRegisterModal()">&times;</span>
+        <h2>Register</h2>
+        <form onsubmit="handleRegister(event)">
+            <input type="text" id="registerName" placeholder="Name" required>
+            <input type="email" id="registerEmail" placeholder="Email" required>
+            <input type="password" id="registerPassword" placeholder="Password" required>
+            <button type="submit">Register</button>
+        </form>
+    </div>
+</div>
+
+<!-- Product Details Modal -->
+<div class="modal" id="productModal">
+    <div class="modal-content product-detail-modal">
+        <span class="close" onclick="closeProductModal()">&times;</span>
+        <div class="product-detail-container">
+            <div class="product-detail-left">
+                <img id="modalImage" src="" alt="Product Image">
+            </div>
+            <div class="product-detail-right">
+                <h2 id="modalTitle"></h2>
+                <p id="modalDescription"></p>
+                <h3 id="modalPrice"></h3>
+                <p id="modalCategory"></p>
+                <p id="modalStock"></p>
+                
+                <div class="offers-section">
+                    <h4>Special Offers:</h4>
+                    <ul>
+                        <li>Free shipping on orders above ₹999</li>
+                        <li>10% discount on first purchase</li>
+                        <li>Cash on delivery available</li>
+                    </ul>
+                </div>
+
+                <div class="quantity-section">
+                    <label for="quantity">Quantity:</label>
+                    <input type="number" id="quantity" value="1" min="1" max="10">
+                </div>
+
+                <div class="delivery-section">
+                    <h4>Delivery Address:</h4>
+                    <input type="text" id="deliveryStreet" placeholder="Street Address" required>
+                    <input type="text" id="deliveryCity" placeholder="City" required>
+                    <input type="text" id="deliveryState" placeholder="State" required>
+                    <input type="text" id="deliveryZip" placeholder="Zip Code" required>
+                </div>
+
+                <div class="payment-section">
+                    <h4>Payment Mode:</h4>
+                    <select id="paymentMode">
+                        <option value="cod">Cash on Delivery</option>
+                        <option value="card">Credit/Debit Card</option>
+                        <option value="upi">UPI Payment</option>
+                        <option value="netbanking">Net Banking</option>
+                    </select>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="buy-now-btn" onclick="buyNow()">Buy Now</button>
+                    <button class="add-cart-btn" onclick="addToCartFromModal()">Add to Cart</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Shopping Cart -->
+<div class="cart" id="cartPanel">
+    <h2>Shopping Cart</h2>
+    <div id="cartItems"></div>
+
+    <div class="total">
+        Total: ₹<span id="totalPrice">0</span>
+    </div>
+
+    <button class="checkout-btn" onclick="showCheckoutModal()">
+        Place Order
+    </button>
+</div>
+
+<!-- Checkout Modal -->
+<div class="modal" id="checkoutModal">
+    <div class="modal-content">
+        <span class="close" onclick="closeCheckoutModal()">&times;</span>
+        <h2>Checkout</h2>
+        <form onsubmit="handleCheckout(event)">
+            <input type="text" id="shippingStreet" placeholder="Street Address" required>
+            <input type="text" id="shippingCity" placeholder="City" required>
+            <input type="text" id="shippingState" placeholder="State" required>
+            <input type="text" id="shippingZip" placeholder="Zip Code" required>
+            <input type="text" id="shippingCountry" placeholder="Country" required>
+            <button type="submit">Place Order</button>
+        </form>
+    </div>
+</div>
+
+<script>
+const API_URL = 'http://localhost:5000/api';
+let token = localStorage.getItem('token');
+let currentUser = null;
+let cart = [];
+let products = [];
+
+// Check authentication on load
+document.addEventListener('DOMContentLoaded', () => {
+    if (token) {
+        checkAuth();
+    }
+    loadProducts();
+    updateAuthUI();
+});
+
+// Authentication functions
+async function checkAuth() {
+    try {
+        const response = await fetch(`${API_URL}/auth/me`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        if (response.ok) {
+            currentUser = await response.json();
+            loadCart();
+        } else {
+            logout();
+        }
+    } catch (error) {
+        console.error('Auth check failed:', error);
+    }
+}
+
+function updateAuthUI() {
+    const loginBtn = document.getElementById('loginBtn');
+    const registerBtn = document.getElementById('registerBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    
+    if (currentUser) {
+        loginBtn.classList.add('hidden');
+        registerBtn.classList.add('hidden');
+        logoutBtn.classList.remove('hidden');
+    } else {
+        loginBtn.classList.remove('hidden');
+        registerBtn.classList.remove('hidden');
+        logoutBtn.classList.add('hidden');
+    }
+}
+
+async function handleLogin(event) {
+    event.preventDefault();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            token = data.token;
+            localStorage.setItem('token', token);
+            currentUser = data.user;
+            closeLoginModal();
+            updateAuthUI();
+            loadCart();
+            alert('Login successful!');
+        } else {
+            alert(data.message || 'Login failed');
+        }
+    } catch (error) {
+        alert('Login failed: ' + error.message);
+    }
+}
+
+async function handleRegister(event) {
+    event.preventDefault();
+    const name = document.getElementById('registerName').value;
+    const email = document.getElementById('registerEmail').value;
+    const password = document.getElementById('registerPassword').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            token = data.token;
+            localStorage.setItem('token', token);
+            currentUser = data.user;
+            closeRegisterModal();
+            updateAuthUI();
+            alert('Registration successful!');
+        } else {
+            alert(data.message || 'Registration failed');
+        }
+    } catch (error) {
+        alert('Registration failed: ' + error.message);
+    }
+}
+
+function logout() {
+    token = null;
+    currentUser = null;
+    localStorage.removeItem('token');
+    cart = [];
+    updateAuthUI();
+    updateCart();
+    alert('Logged out successfully');
+}
+
+// Modal functions
+function showLoginModal() {
+    document.getElementById('loginModal').style.display = 'block';
+}
+
+function closeLoginModal() {
+    document.getElementById('loginModal').style.display = 'none';
+}
+
+function showRegisterModal() {
+    document.getElementById('registerModal').style.display = 'block';
+}
+
+function closeRegisterModal() {
+    document.getElementById('registerModal').style.display = 'none';
+}
+
+function showCheckoutModal() {
+    if (!currentUser) {
+        alert('Please login to place an order');
+        showLoginModal();
+        return;
+    }
+    if (cart.length === 0) {
+        alert('Cart is empty!');
+        return;
+    }
+    document.getElementById('checkoutModal').style.display = 'block';
+}
+
+function closeCheckoutModal() {
+    document.getElementById('checkoutModal').style.display = 'none';
+}
+
+// Product functions
+async function loadProducts() {
+    try {
+        const response = await fetch(`${API_URL}/products`);
+        products = await response.json();
+        displayProducts();
+    } catch (error) {
+        console.error('Failed to load products:', error);
+        // Fallback to all 30 products if backend is not available
+        products = [
+            { _id: '1', name: 'Laptop', price: 50000, description: 'High-performance laptop with 16GB RAM, 512GB SSD, and Intel i7 processor.', image: 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=400&h=300&fit=crop', category: 'Electronics', stock: 10 },
+            { _id: '2', name: 'Smartphone', price: 25000, description: 'Latest smartphone model with 5G support, 128GB storage, and AMOLED display.', image: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&h=300&fit=crop', category: 'Electronics', stock: 15 },
+            { _id: '3', name: 'Headphones', price: 3000, description: 'Wireless headphones with noise cancellation and 30-hour battery life.', image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&h=300&fit=crop', category: 'Audio', stock: 20 },
+            { _id: '4', name: 'Smart Watch', price: 5000, description: 'Fitness tracking smartwatch with heart rate monitor and GPS.', image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&h=300&fit=crop', category: 'Wearables', stock: 12 },
+            { _id: '5', name: 'Tablet', price: 18000, description: '10-inch tablet with 64GB storage and stylus support.', image: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=400&h=300&fit=crop', category: 'Electronics', stock: 8 },
+            { _id: '6', name: 'Bluetooth Speaker', price: 1500, description: 'Portable Bluetooth speaker with 360-degree sound and waterproof design.', image: 'https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?w=400&h=300&fit=crop', category: 'Audio', stock: 25 },
+            { _id: '7', name: 'Wireless Earbuds', price: 2000, description: 'True wireless earbuds with active noise cancellation and 24-hour battery life.', image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=400&h=300&fit=crop', category: 'Audio', stock: 30 },
+            { _id: '8', name: 'Gaming Mouse', price: 1200, description: 'RGB gaming mouse with 16000 DPI sensor and programmable buttons.', image: 'https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=400&h=300&fit=crop', category: 'Accessories', stock: 18 },
+            { _id: '9', name: 'Mechanical Keyboard', price: 3500, description: 'RGB mechanical keyboard with Cherry MX switches and aluminum frame.', image: 'https://images.unsplash.com/photo-1595225476474-87563907a212?w=400&h=300&fit=crop', category: 'Accessories', stock: 14 },
+            { _id: '10', name: 'Monitor 27-inch', price: 22000, description: '27-inch 4K monitor with HDR support and 144Hz refresh rate.', image: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=400&h=300&fit=crop', category: 'Electronics', stock: 10 },
+            { _id: '11', name: 'External Hard Drive', price: 4500, description: '2TB external hard drive with USB 3.0 and fast transfer speeds.', image: 'https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=400&h=300&fit=crop', category: 'Storage', stock: 20 },
+            { _id: '12', name: 'Webcam HD', price: 1800, description: '1080p HD webcam with auto-focus and built-in microphone.', image: 'https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?w=400&h=300&fit=crop', category: 'Accessories', stock: 25 },
+            { _id: '13', name: 'USB Hub', price: 800, description: '7-port USB 3.0 hub with fast charging support.', image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=300&fit=crop', category: 'Accessories', stock: 30 },
+            { _id: '14', name: 'Laptop Stand', price: 1500, description: 'Adjustable aluminum laptop stand for better ergonomics.', image: 'https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=400&h=300&fit=crop', category: 'Accessories', stock: 22 },
+            { _id: '15', name: 'Power Bank', price: 1200, description: '20000mAh power bank with fast charging and dual USB ports.', image: 'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=400&h=300&fit=crop', category: 'Accessories', stock: 35 },
+            { _id: '16', name: 'Wireless Charger', price: 900, description: 'Fast wireless charger compatible with all Qi-enabled devices.', image: 'https://images.unsplash.com/photo-1586816879360-004f5b0c51e5?w=400&h=300&fit=crop', category: 'Accessories', stock: 28 },
+            { _id: '17', name: 'Fitness Band', price: 2500, description: 'Waterproof fitness band with step tracking and heart rate monitor.', image: 'https://images.unsplash.com/photo-1575311373937-040b8e1fd5b6?w=400&h=300&fit=crop', category: 'Wearables', stock: 20 },
+            { _id: '18', name: 'Smart Home Hub', price: 4000, description: 'Central hub for controlling all your smart home devices.', image: 'https://images.unsplash.com/photo-1558089687-f282ffcbc126?w=400&h=300&fit=crop', category: 'Smart Home', stock: 12 },
+            { _id: '19', name: 'Smart Bulb', price: 600, description: 'WiFi-enabled smart bulb with 16 million colors and voice control.', image: 'https://images.unsplash.com/photo-1558171813-4c088753af8f?w=400&h=300&fit=crop', category: 'Smart Home', stock: 40 },
+            { _id: '20', name: 'Security Camera', price: 3000, description: '1080p wireless security camera with night vision and motion detection.', image: 'https://images.unsplash.com/photo-1557597774-9d273605dfa9?w=400&h=300&fit=crop', category: 'Smart Home', stock: 15 },
+            { _id: '21', name: 'Wireless Router', price: 3500, description: 'Dual-band WiFi 6 router with high-speed connectivity and mesh support.', image: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=400&h=300&fit=crop', category: 'Electronics', stock: 18 },
+            { _id: '22', name: 'Portable SSD', price: 5500, description: '1TB portable SSD with USB-C and fast transfer speeds.', image: 'https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?w=400&h=300&fit=crop', category: 'Storage', stock: 22 },
+            { _id: '23', name: 'Graphics Card', price: 35000, description: 'RTX 3060 graphics card for gaming and content creation.', image: 'https://images.unsplash.com/photo-1591488320449-011701bb6704?w=400&h=300&fit=crop', category: 'Electronics', stock: 8 },
+            { _id: '24', name: 'Wireless Mouse', price: 800, description: 'Ergonomic wireless mouse with silent clicks and long battery life.', image: 'https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=400&h=300&fit=crop', category: 'Accessories', stock: 30 },
+            { _id: '25', name: 'Desk Lamp', price: 1200, description: 'LED desk lamp with adjustable brightness and color temperature.', image: 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=400&h=300&fit=crop', category: 'Accessories', stock: 25 },
+            { _id: '26', name: 'Bluetooth Earphones', price: 1500, description: 'Neckband style Bluetooth earphones with 12-hour battery life.', image: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=400&h=300&fit=crop', category: 'Audio', stock: 28 },
+            { _id: '27', name: 'Smart Doorbell', price: 4500, description: 'Video doorbell with motion detection and two-way audio.', image: 'https://images.unsplash.com/photo-1558002038-1091a1661116?w=400&h=300&fit=crop', category: 'Smart Home', stock: 15 },
+            { _id: '28', name: 'Laptop Sleeve', price: 600, description: 'Padded laptop sleeve for 15-inch laptops with water-resistant coating.', image: 'https://images.unsplash.com/photo-1603302576837-37561b2e2302?w=400&h=300&fit=crop', category: 'Accessories', stock: 35 },
+            { _id: '29', name: 'Wireless Gamepad', price: 2500, description: 'Bluetooth game controller compatible with PC and mobile devices.', image: 'https://images.unsplash.com/photo-1592840496694-26d035b52b48?w=400&h=300&fit=crop', category: 'Accessories', stock: 20 },
+            { _id: '30', name: 'Smart Thermostat', price: 5500, description: 'WiFi-enabled smart thermostat with energy-saving features.', image: 'https://images.unsplash.com/photo-1567706424447-5112446a8956?w=400&h=300&fit=crop', category: 'Smart Home', stock: 12 }
+        ];
+        displayProducts();
+    }
+}
+
+function displayProducts(productsToDisplay = products) {
+    const productContainer = document.getElementById("products");
+    productContainer.innerHTML = "";
+
+    productsToDisplay.forEach(product => {
+        productContainer.innerHTML += `
+        <div class="card" onclick="showProductDetails('${product._id}')">
+            <img src="${product.image}" alt="${product.name}">
+            <div class="card-content">
+                <h3>${product.name}</h3>
+                <p class="price">₹${product.price}</p>
+                <p class="category">${product.category || 'General'}</p>
+                <p class="stock">Stock: ${product.stock || 'N/A'}</p>
+                <p class="brief-desc">${product.description.substring(0, 60)}...</p>
+
+                <div class="button-group">
+                    <button class="btn" onclick="event.stopPropagation(); addToCart('${product._id}')">
+                        Add To Cart
+                    </button>
+                    <button class="btn wishlist-btn" onclick="event.stopPropagation(); addToWishlist('${product._id}')">
+                        ♡ Wishlist
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    });
+}
+
+function searchProducts() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const filteredProducts = products.filter(product => 
+        product.name.toLowerCase().includes(searchTerm) ||
+        product.category.toLowerCase().includes(searchTerm) ||
+        product.description.toLowerCase().includes(searchTerm)
+    );
+    displayProducts(filteredProducts);
+}
+
+let currentProduct = null;
+
+function showProductDetails(id) {
+    const product = products.find(p => p._id === id);
+    currentProduct = product;
+
+    document.getElementById("modalTitle").innerText = product.name;
+    document.getElementById("modalDescription").innerText = product.description;
+    document.getElementById("modalPrice").innerText = "₹" + product.price;
+    document.getElementById("modalCategory").innerText = "Category: " + (product.category || 'N/A');
+    document.getElementById("modalStock").innerText = "Stock: " + (product.stock || 'N/A');
+    document.getElementById("modalImage").src = product.image;
+    document.getElementById("quantity").value = 1;
+
+    document.getElementById("productModal").style.display = "block";
+}
+
+function closeProductModal() {
+    document.getElementById("productModal").style.display = "none";
+    currentProduct = null;
+}
+
+function buyNow() {
+    if (!currentUser) {
+        alert('Please login to buy products');
+        closeProductModal();
+        showLoginModal();
+        return;
+    }
+
+    const quantity = parseInt(document.getElementById("quantity").value);
+    const shippingAddress = {
+        street: document.getElementById('deliveryStreet').value,
+        city: document.getElementById('deliveryCity').value,
+        state: document.getElementById('deliveryState').value,
+        zipCode: document.getElementById('deliveryZip').value,
+        country: 'India'
+    };
+
+    if (!shippingAddress.street || !shippingAddress.city || !shippingAddress.state || !shippingAddress.zipCode) {
+        alert('Please fill in all delivery address fields');
+        return;
+    }
+
+    const orderProducts = [{
+        productId: currentProduct._id,
+        quantity: quantity,
+        price: currentProduct.price
+    }];
+
+    fetch(`${API_URL}/orders`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ products: orderProducts, shippingAddress })
+    })
+    .then(response => response.json())
+    .then(order => {
+        closeProductModal();
+        alert('Order placed successfully! Order ID: ' + order._id);
+    })
+    .catch(error => {
+        console.error('Buy now failed:', error);
+        alert('Failed to place order: ' + error.message);
+    });
+}
+
+function addToCartFromModal() {
+    if (!currentUser) {
+        alert('Please login to add items to cart');
+        closeProductModal();
+        showLoginModal();
+        return;
+    }
+
+    const quantity = parseInt(document.getElementById("quantity").value);
+
+    fetch(`${API_URL}/cart/add`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ productId: currentProduct._id, quantity: quantity })
+    })
+    .then(response => response.json())
+    .then(updatedCart => {
+        cart = updatedCart;
+        updateCart();
+        closeProductModal();
+        alert('Item added to cart!');
+    })
+    .catch(error => {
+        console.error('Failed to add to cart:', error);
+        alert('Failed to add item to cart');
+    });
+}
+
+// Cart functions
+async function loadCart() {
+    if (!currentUser) return;
+    
+    try {
+        const response = await fetch(`${API_URL}/cart`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.ok) {
+            const cartData = await response.json();
+            cart = cartData;
+            updateCart();
+        }
+    } catch (error) {
+        console.error('Failed to load cart:', error);
+    }
+}
+
+async function addToCart(productId) {
+    if (!currentUser) {
+        alert('Please login to add items to cart');
+        showLoginModal();
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/cart/add`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ productId, quantity: 1 })
+        });
+        
+        if (response.ok) {
+            const updatedCart = await response.json();
+            cart = updatedCart;
+            updateCart();
+            alert('Item added to cart!');
+        } else {
+            alert('Failed to add item to cart');
+        }
+    } catch (error) {
+        console.error('Failed to add to cart:', error);
+        // Fallback to local cart if backend is not available
+        const product = products.find(p => p._id === productId);
+        cart.push({ ...product, quantity: 1 });
+        updateCart();
+    }
+}
+
+async function addToWishlist(productId) {
+    if (!currentUser) {
+        alert('Please login to add items to wishlist');
+        showLoginModal();
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/wishlist/add`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ productId })
+        });
+        
+        if (response.ok) {
+            alert('Item added to wishlist!');
+        } else {
+            alert('Failed to add item to wishlist');
+        }
+    } catch (error) {
+        console.error('Failed to add to wishlist:', error);
+        alert('Failed to add item to wishlist');
+    }
+}
+
+async function removeFromCart(productId) {
+    if (!currentUser) {
+        cart = cart.filter(item => item.product._id !== productId);
+        updateCart();
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_URL}/cart/remove/${productId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.ok) {
+            const updatedCart = await response.json();
+            cart = updatedCart;
+            updateCart();
+        }
+    } catch (error) {
+        console.error('Failed to remove from cart:', error);
+        cart = cart.filter(item => item.product._id !== productId);
+        updateCart();
+    }
+}
+
+function updateCart() {
+    document.getElementById("cartCount").innerText = cart.reduce((sum, item) => sum + (item.quantity || 1), 0);
+
+    let total = 0;
+    const cartItems = document.getElementById("cartItems");
+    cartItems.innerHTML = "";
+
+    cart.forEach(item => {
+        const product = item.product || item;
+        const quantity = item.quantity || 1;
+        const price = product.price || item.price;
+        total += price * quantity;
+
+        cartItems.innerHTML += `
+        <div class="cart-item">
+            <h4>${product.name}</h4>
+            <p>₹${price} x ${quantity}</p>
+            <button class="remove-btn" onclick="removeFromCart('${product._id}')">Remove</button>
+        </div>`;
+    });
+
+    document.getElementById("totalPrice").innerText = total;
+}
+
+function toggleCart() {
+    document.getElementById("cartPanel").classList.toggle("active");
+}
+
+async function handleCheckout(event) {
+    event.preventDefault();
+    
+    if (!currentUser) {
+        alert('Please login to place an order');
+        return;
+    }
+    
+    const shippingAddress = {
+        street: document.getElementById('shippingStreet').value,
+        city: document.getElementById('shippingCity').value,
+        state: document.getElementById('shippingState').value,
+        zipCode: document.getElementById('shippingZip').value,
+        country: document.getElementById('shippingCountry').value
+    };
+    
+    const orderProducts = cart.map(item => ({
+        productId: item.product._id,
+        quantity: item.quantity,
+        price: item.product.price
+    }));
+    
+    try {
+        const response = await fetch(`${API_URL}/orders`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ products: orderProducts, shippingAddress })
+        });
+        
+        if (response.ok) {
+            const order = await response.json();
+            closeCheckoutModal();
+            cart = [];
+            updateCart();
+            alert('Order placed successfully! Order ID: ' + order._id);
+        } else {
+            const data = await response.json();
+            alert('Failed to place order: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Checkout failed:', error);
+        alert('Checkout failed: ' + error.message);
+    }
+}
+</script>
+
+</body>
+</html>
